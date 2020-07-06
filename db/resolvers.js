@@ -1,5 +1,6 @@
 const User = require('../models/users');
 const Product = require('../models/products');
+const Client = require('../models/clients');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config({path: 'variables.env'});
@@ -31,8 +32,41 @@ const resolvers = {
       } else {
         throw new Error("The product does not exist");
       }
+    },
+    getClients: async () => {
+      try {
+        const clients = await Client.find({});
+        return clients;
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    getClientsFromSeller: async (_,{}, ctx) => {
+      try {
+        const clients = await Client.find({seller: ctx.user._id.toString()});
+        return clients;
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    getClient: async (_,{id}, ctx) => {
+      try {
+        const client = await Client.findById(id);
+        if (!client) {
+          throw new Error("The client does not exist");
+        }
+
+        if (client.seller.toString() !== ctx.user._id.toString()) {
+          throw new Error("Invalid credentials");
+        }
+
+        return client;
+
+      } catch (error) {
+        throw new Error(error);
+      }
     }
-  },
+   },
   Mutation: {
     newUser: async (_, {data}) => {
       const {email, password} = data;
@@ -105,7 +139,55 @@ const resolvers = {
       } else {
         throw new Error("The product does not exist");
       }
-    }
+    },
+    newClient: async (_, {data}, ctx) => {
+      const {email} = data;
+      const clientExist = await Client.findOne({email});
+
+      if (clientExist) {
+        throw new Error("The client already exist");
+
+      } else {
+        const newClient = new Client(data);
+        newClient.seller = ctx.user._id
+
+        try {
+          const response = await newClient.save()
+          return response;
+
+        } catch (error) {
+          console.log(error)
+        }
+      }
+    },
+    updateClient: async (_,{id,data}, ctx) => {
+        let client = await Client.findById(id);
+        if (!client) {
+          throw new Error("The client does not exist");
+        }
+
+        if (client.seller.toString() !== ctx.user._id.toString()) {
+          throw new Error("Invalid credentials");
+        }
+
+        client = await Client.findOneAndUpdate({_id: id}, data, {new: true});
+        return client;
+
+    },
+    deleteClient: async (_, {id}, ctx) => {
+      let client = await Client.findById(id);
+
+      if (!client) {
+        throw new Error("The client does not exist");
+      }
+
+      if (client.seller.toString() !== ctx.user._id.toString()) {
+        throw new Error("Invalid credentials");
+      }
+
+      client = await Client.findOneAndDelete({_id: id});
+      return "Client deleted successfully"
+    },
   }
 };
 
