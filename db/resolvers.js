@@ -1,6 +1,8 @@
 const User = require('../models/users');
 const Product = require('../models/products');
 const Client = require('../models/clients');
+const Order = require('../models/orders');
+
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config({path: 'variables.env'});
@@ -62,6 +64,47 @@ const resolvers = {
 
         return client;
 
+      } catch (error) {
+        throw new Error(error);
+      }
+    },
+    getOrders: async () => {
+      try {
+        const orders = await Order.find({});
+        return orders;
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    getOrdersBySeller: async (_,{}, ctx) => {
+      try {
+        const orders = await Order.find({seller: ctx.user._id.toString()});
+        return orders;
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    getOrder: async (_,{id},ctx) => {
+      try {
+        const order = await Order.findById(id);
+        if (!order) {
+          throw new Error("The order does not exist");
+        }
+
+        if (order.seller.toString() !== ctx.user._id.toString()) {
+          throw new Error("Invalid credentials");
+        }
+
+        return order;
+      } catch (error) {
+        throw new Error(error);
+      }
+
+    },
+    getOrderByStatus: async (_,{status}, ctx) => {
+      try {
+        const orders = await Order.find({seller: ctx.user._id.toString(), status: status});
+        return orders;
       } catch (error) {
         throw new Error(error);
       }
@@ -187,6 +230,87 @@ const resolvers = {
 
       client = await Client.findOneAndDelete({_id: id});
       return "Client deleted successfully"
+    },
+    newOrder: async (_, {data}, ctx) => {
+      const { client } = data;
+
+      let isClientExist = await Client.findById(client);
+      if (!isClientExist) {
+        throw new Error("The client does not exist");
+      }
+
+      if (isClientExist.seller.toString() !== ctx.user._id.toString()) {
+        throw new Error("Invalid credentials");
+      }
+
+      for await (const product of data.order) {
+        const { _id } = product;
+        const productData = await Product.findById(_id);
+
+        if (product.amount > productData.inventory) {
+          throw new Error('There are only ' + productData.inventory + ' pieces availables')
+        } else {
+          productData.inventory = productData.inventory - product.amount;
+          await productData.save()
+        }
+      };
+
+      const newOrder = new Order(data);
+      newOrder.seller = ctx.user._id;
+
+      const response = await newOrder.save();
+      return response;
+
+    },
+    updateOrder: async (_,{id, data}, ctx) => {
+      const {client} = data;
+      const isOrderExist = await Order.findById(id);
+
+      if (!isOrderExist) {
+        throw new Error("The order does not exist");
+      }
+
+      const isClientExist = await Client.findById(client);
+
+      if (!isClientExist) {
+        throw new Error("The client does not exist");
+      }
+
+      if (isClientExist.seller.toString() !== ctx.user._id.toString()) {
+        throw new Error("Invalid credentials");
+      }
+
+
+      if (data.order) {
+        for await (const product of isOrderExist.order) {
+          const { _id } = product;
+          const productData = await Product.findById(_id);
+
+          if (product.amount > productData.inventory) {
+            throw new Error('There are only ' + productData.inventory + ' pieces availables')
+          } else {
+            productData.inventory = productData.inventory - product.amount;
+            await productData.save()
+          }
+        };
+      }
+
+      const response = await Order.findByIdAndUpdate({_id: id}, data, {new: true});
+      return response;
+
+    },
+    deleteOrder: async (_, {id}, ctx) => {
+      const order = await Order.findById(id);
+      if (!order) {
+        throw new Error("The order does not exist");
+      }
+
+      if (order.seller.toString() !== ctx.user._id.toString()) {
+        throw new Error("Invalid credentials");
+      }
+
+      await Order.findOneAndDelete({_id: id});
+      return "Order deleted successfully"
     },
   }
 };
